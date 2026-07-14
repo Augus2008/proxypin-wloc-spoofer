@@ -3,7 +3,6 @@
 <p align="center">
   <img src="assets/cover.jpg" alt="ProxyPin WLOC 响应重写脚本封面">
 </p>
-完整图文教程请看：[ProxyPin WLOC 响应重写脚本图文教程](docs/zh-CN/tutorial.md)。
 <p align="center">
   中文 · <a href="README-EN.md">English</a>
 </p>
@@ -15,7 +14,7 @@
   <a href="https://github.com/wanghongenpin/proxypin"><img alt="ProxyPin script" src="https://img.shields.io/badge/PROXYPIN-SCRIPT-334155?style=for-the-badge"></a>
   <a href="https://linux.do"><img alt="Linux.do" src="https://img.shields.io/badge/LINUX.DO-COMMUNITY-334155?style=for-the-badge"></a>
 </p>
-
+完整图文教程请看：[ProxyPin WLOC 响应重写脚本图文教程](docs/zh-CN/tutorial.md)。
 这是一个用于授权 iOS 定位测试的 ProxyPin 脚本。它拦截 Apple WLOC
 接口响应：
 
