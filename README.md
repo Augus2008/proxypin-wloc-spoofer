@@ -14,7 +14,6 @@
   <a href="https://github.com/wanghongenpin/proxypin"><img alt="ProxyPin script" src="https://img.shields.io/badge/PROXYPIN-SCRIPT-334155?style=for-the-badge"></a>
   <a href="https://linux.do"><img alt="Linux.do" src="https://img.shields.io/badge/LINUX.DO-COMMUNITY-334155?style=for-the-badge"></a>
 </p>
-完整图文教程请看：[ProxyPin WLOC 响应重写脚本图文教程](docs/zh-CN/tutorial.md)。
 这是一个用于授权 iOS 定位测试的 ProxyPin 脚本。它拦截 Apple WLOC
 接口响应：
 
@@ -25,7 +24,7 @@
 
 这不是 Apple CVE，不是远程漏洞，也不是 iOS 权限绕过。它只能在用户主动安装并信任
 ProxyPin CA 证书、并让设备流量经过 ProxyPin 的测试环境里生效。
-
+完整图文教程请看：[ProxyPin WLOC 响应重写脚本图文教程](docs/zh-CN/tutorial.md)。
 ## 免责声明
 
 本项目仅用于授权测试、安全研究和 QA 场景复现。
