@@ -3,7 +3,7 @@
 <p align="center">
   <img src="assets/cover.jpg" alt="ProxyPin WLOC 响应重写脚本封面">
 </p>
-
+完整图文教程请看：[ProxyPin WLOC 响应重写脚本图文教程](docs/zh-CN/tutorial.md)。
 <p align="center">
   中文 · <a href="README-EN.md">English</a>
 </p>
