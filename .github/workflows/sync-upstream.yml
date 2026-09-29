@@ -2,14 +2,13 @@ name: Sync upstream
 
 # 每日自动同步上游仓库（GitHub 官方 merge-upstream API）
 # 北京时间 10:00 = UTC 02:00
-# 特性：不强推、不覆盖 Fork 自有提交、冲突时自动失败停止
+# 安全特性：不强推、不覆盖 Fork 自有提交、有冲突时安全跳过
 
 on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
 
-# 顶层不授予任何权限，仅 job 内按需最小授权
 permissions: {}
 
 concurrency:
@@ -23,91 +22,90 @@ jobs:
       contents: write
 
     steps:
-      - name: Validate fork context
+      - name: Sync upstream
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PARENT: ${{ github.event.repository.parent.full_name }}
-          BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          echo "repo=$REPO"
-          echo "parent=$PARENT"
-          echo "branch=$BRANCH"
 
-          if [ -z "$PARENT" ] || [ "$PARENT" = "null" ]; then
-            echo "::error::当前仓库不是 Fork，或无法读取上游信息，停止。"
+          # 1. 实时读取本仓库信息（不依赖事件上下文）
+          info=$(curl -sS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "User-Agent: fork-sync-workflow" \
+            "https://api.github.com/repos/${REPO}")
+
+          parent=$(printf '%s' "$info" | jq -r '.parent.full_name // empty')
+          branch=$(printf '%s' "$info" | jq -r '.default_branch')
+
+          echo "repo=${REPO}"
+          echo "parent=${parent}"
+          echo "branch=${branch}"
+
+          if [ -z "$parent" ]; then
+            echo "::error::当前仓库不是 Fork 或无法读取上游信息，停止。"
             exit 1
           fi
 
-          # 硬门禁：只允许同步到已审核确认的 6 个上游
+          # 2. 硬门禁：仅允许同步到已审核的上游清单
           ALLOW="FFF686868/proxypin-wloc-spoofer NSRingo/iRingo songguoxs/awesome-video-prompts songguoxs/gpt4o-image-prompts Biliverse/Universe wy51ai/floorplan-3d"
           ok=0
           for p in $ALLOW; do
-            if [ "$p" = "$PARENT" ]; then ok=1; fi
+            [ "$p" = "$parent" ] && ok=1
           done
           if [ "$ok" != "1" ]; then
-            echo "::error::上游 $PARENT 不在允许清单内，停止。"
+            echo "::error::上游 ${parent} 不在允许清单内，停止。"
             exit 1
           fi
 
-          # 同步前记录默认分支当前 SHA，便于事后核对
-          echo "before_sha=$(git ls-remote "https://github.com/${REPO}.git" "refs/heads/${BRANCH}" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+          # 3. 记录同步前的默认分支 SHA（用于事后核对）
+          before=$(curl -sS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "User-Agent: fork-sync-workflow" \
+            "https://api.github.com/repos/${REPO}/branches/${branch}" | jq -r '.commit.sha')
 
-      - name: Sync via merge-upstream API
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-
-          # 官方 API：仅在可快进时同步；存在冲突/分叉时返回 409，不会覆盖提交
+          # 4. 调用官方 merge-upstream：仅在可快进时同步，冲突时返回 409，绝不覆盖自有提交
           http_code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
             -X POST \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             -H "User-Agent: fork-sync-workflow" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/merge-upstream" \
-            -d "{\"branch\":\"${BRANCH}\"}")
+            "https://api.github.com/repos/${REPO}/merge-upstream" \
+            -d "{\"branch\":\"${branch}\"}")
 
-          echo "HTTP $http_code"
-          cat /tmp/resp.json
-          echo ""
+          echo "merge-upstream HTTP ${http_code}"
+          cat /tmp/resp.json; echo ""
 
           case "$http_code" in
-            200)
-              echo "::notice::同步成功"
-              ;;
-            204)
-              echo "::notice::已是最新，无需同步"
-              ;;
-            409)
-              echo "::warning::上游有冲突或存在分叉提交，已安全跳过，未覆盖任何提交。"
-              exit 0
-              ;;
-            422)
-              echo "::warning::无法合并（可能已是最新或分支不匹配），已安全跳过。"
-              exit 0
-              ;;
-            *)
-              echo "::error::同步失败，HTTP $http_code"
-              exit 1
-              ;;
+            200) msg="同步成功" ;;
+            204) msg="已是最新，无需同步" ;;
+            409) msg="上游存在冲突或分叉，已安全跳过（未覆盖任何提交）" ;;
+            422) msg="无法合并（可能已最新或分支不匹配），已安全跳过" ;;
+            *)   echo "::error::同步失败 HTTP ${http_code}"; exit 1 ;;
           esac
+          echo "::notice::${msg}"
 
-      - name: Report result
-        if: always()
-        env:
-          BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          after=$(git ls-remote "https://github.com/${{ github.repository }}.git" "refs/heads/${BRANCH}" | cut -f1)
+          # 5. 记录同步后 SHA
+          after=$(curl -sS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "User-Agent: fork-sync-workflow" \
+            "https://api.github.com/repos/${REPO}/branches/${branch}" | jq -r '.commit.sha')
+
           {
+            echo "### Fork 同步结果"
             echo ""
-            echo "### 同步结果"
-            echo "- 仓库：\`${{ github.repository }}\`"
-            echo "- 上游：\`${{ github.event.repository.parent.full_name }}\`"
-            echo "- 分支：\`${BRANCH}\`"
-            echo "- 同步后 SHA：\`${after}\`"
-            echo "- 触发方式：\`${{ github.event_name }}\`"
+            echo "| 项目 | 值 |"
+            echo "|---|---|"
+            echo "| 仓库 | \`${REPO}\` |"
+            echo "| 上游 | \`${parent}\` |"
+            echo "| 分支 | \`${branch}\` |"
+            echo "| 结果 | ${msg} |"
+            echo "| 同步前 SHA | \`${before}\` |"
+            echo "| 同步后 SHA | \`${after}\` |"
+            echo "| 触发方式 | \`${{ github.event_name }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
